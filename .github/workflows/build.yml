@@ -1,67 +1,31 @@
 name: Build APK
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
+      - name: Install Android AIDL and Build Tools
+        run: |
+          sudo apt update
+          sudo apt install -y openjdk-17-jdk python3-pip
+          # Install the specific Android SDK component containing AIDL
+          mkdir -p ~/.android && touch ~/.android/repositories.cfg
+          wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip commandlinetools-linux-9477386_latest.zip
+          mkdir -p cmdline-tools/latest
+          mv cmdline-tools/bin cmdline-tools/latest/
+          mv cmdline-tools/lib cmdline-tools/latest/
+          export PATH=$PATH:$(pwd)/cmdline-tools/latest/bin
+          yes | ./cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk "build-tools;34.0.0" "platforms;android-34" "platform-tools"
 
-    - name: Setup Java
-      uses: actions/setup-java@v3
-      with:
-        distribution: 'zulu'
-        java-version: '8'
-
-    - name: Install system dependencies
-      run: |
-        sudo dpkg --add-architecture i386
-        sudo apt update
-        sudo apt install -y python3 python3-pip build-essential git libffi-dev libssl-dev zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libsqlite3-dev libreadline-dev libbz2-dev libexpat1-dev liblzma-dev tk-dev openjdk-8-jdk libc6-dev-i386
-
-    - name: Install Buildozer
-      run: |
-        pip3 install buildozer
-
-    - name: Install Cython
-      run: |
-        pip3 install cython
-
-    - name: Setup Buildozer
-      run: |
-        buildozer init || echo "buildozer.spec already exists"
-        buildozer android update
-
-    - name: Install Android Build Tools and Platform Tools
-      run: |
-        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0" "platform-tools" "platforms;android-34"
-
-    - name: Accept Android SDK licenses
-      run: |
-        echo y | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-
-    - name: Verify AIDL is available
-      run: |
-        find $ANDROID_HOME -name "aidl" -exec ls -la {} \;
-        ls -la $ANDROID_HOME/build-tools/
-
-    - name: Build APK
-      run: |
-        buildozer android debug
-
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: uok-faq-bot-apk
-        path: bin/*.apk
+      - name: Build with Buildozer
+        working-directory: chatbot
+        run: |
+          pip3 install --user --upgrade buildozer
+          export PATH=$PATH:$HOME/.local/bin
+          # Point Buildozer to the SDK we just manually updated
+          export ANDROID_SDK_HOME=$HOME/android-sdk
+          buildozer android debug
